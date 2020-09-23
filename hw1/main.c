@@ -80,51 +80,128 @@ Metas *get_token_struct(char **tokens)
     return metas;
 }
 
-int runcmd(char meta, char **argv, char *file, int is_bg, int pipe_side, int fd[])
+int runcmd(Metas *meta_struct)
 {
-    printf("FD %d %d\n", fd[1], fd[2]);
     pid_t child_pid;
     int child_status;
-    child_pid = fork();
-    int camden = 5;
+    /////////////////////////////////////////////
+    int foundInOut = 0;
+    int ii = 0;
+    char meta = 'n';
+    char *file = NULL;
+    char **cmds = NULL;
+    int is_bg = 0;
+    if (meta_struct[get_meta_size(meta_struct) - 2].meta != '&')
+    {
+        is_bg = 0;
+        while (meta_struct[ii].meta != 'n')
+        {
+            if (meta_struct[ii].meta == '<')
+            {
+                // printf("%s %s", meta_struct[ii].cmds[0], meta_struct[ii + 1].cmds[0]);
+                // runcmd('<', meta_struct[ii].cmds, meta_struct[ii + 1].cmds[0], 1, pipe_side);
+                meta = '<';
+                file = meta_struct[ii + 1].cmds[0];
+                cmds = meta_struct[ii].cmds;
+                foundInOut = 1;
+                child_pid = fork();
+            }
+            else if (meta_struct[ii].meta == '>')
+            {
+                // runcmd('>', meta_struct[ii].cmds, meta_struct[ii + 1].cmds[0], 1, pipe_side);
+                meta = '>';
+                file = meta_struct[ii + 1].cmds[0];
+                cmds = meta_struct[ii].cmds;
+                foundInOut = 1;
+                child_pid = fork();
+            }
+            ii++;
+        }
+        if (foundInOut == 0)
+        {
+            // runcmd('n', meta_struct[0].cmds, NULL, 1, pipe_side);
+            meta = 'n';
+            file = NULL;
+            cmds = meta_struct[0].cmds;
+            child_pid = fork();
+        }
+    }
+    else
+    {
+        is_bg = 1;
+        int ii = 0;
+        int foundInOut = 0;
+        while (meta_struct[ii].meta != 'n')
+        {
+            if (meta_struct[ii].meta == '<')
+            {
+                // printf("%s %s", meta_struct[ii].cmds[0], meta_struct[ii + 1].cmds[0]);
+                meta = '<';
+                file = meta_struct[ii + 1].cmds[0];
+                cmds = meta_struct[ii].cmds;
+                foundInOut = 1;
+                child_pid = fork();
+            }
+            else if (meta_struct[ii].meta == '>')
+            {
+                meta = '<';
+                file = meta_struct[ii + 1].cmds[0];
+                cmds = meta_struct[ii].cmds;
+                foundInOut = 1;
+                child_pid = fork();
+            }
+            ii++;
+        }
+        if (foundInOut == 0)
+        {
+            meta = 'n';
+            file = NULL;
+            cmds = meta_struct[0].cmds;
+            child_pid = fork();
+        }
+    }
+
+    /////////////////////////////////////////////
     if (child_pid == 0)
     {
+        int fd[2];
+        pipe(&fd[0]);
+
         if (meta == '>')
         {
             int fd1 = creat(file, 0644);
             dup2(fd1, STDOUT_FILENO);
-            execvp(argv[0], argv);
+            execvp(cmds[0], cmds);
             close(fd1);
         }
         else if (meta == '<')
         {
             int fd2 = open(file, 0644);
             dup2(fd2, STDIN_FILENO);
-            execvp(argv[0], argv);
+            execvp(cmds[0], cmds);
             close(fd2);
         }
-        else if (pipe_side == 1)
-        {
-            printf("In right pipe (%s)\n", argv[0]);
-            close(fd[1]);
-            close(STDIN_FILENO);
-            dup(fd[0]);
-            close(fd[0]);
-            execvp(argv[0], argv);
-        }
-        else if (pipe_side == 0)
-        {
-            printf("In left pipe (%s)\n", argv[0]);
-            close(fd[0]);
-            close(STDOUT_FILENO);
-            dup(fd[1]);
-            close(fd[1]);
-            execvp(argv[0], argv);
-        }
+        // else if (pipe_side == 1)
+        // {
+        //     printf("In right pipe (%s)\n", argv[0]);
+        //     close(fd[1]);
+        //     close(STDIN_FILENO);
+        //     dup(fd[0]);
+        //     close(fd[0]);
+        //     execvp(argv[0], argv);
+        // }
+        // else if (pipe_side == 0)
+        // {
+        //     printf("In left pipe (%s)\n", argv[0]);
+        //     close(fd[0]);
+        //     close(STDOUT_FILENO);
+        //     dup(fd[1]);
+        //     close(fd[1]);
+        //     execvp(argv[0], argv);
+        // }
         else
         {
-            camden = 6;
-            execvp(argv[0], argv);
+            execvp(cmds[0], cmds);
         }
         /* This is done by the child process. */
         // printf("here1 %s\n", file);
@@ -138,12 +215,14 @@ int runcmd(char meta, char **argv, char *file, int is_bg, int pipe_side, int fd[
     {
         /* This is run by the parent.  Wait for the child
         to terminate. */
-        if (is_bg == 0)
+        // if (is_bg == 0)
+        // {
+        if (is_bg == 1)
         {
-            if (pipe_side == 0)
-            {
-            }
-
+            signal(SIGCHLD, child_handler);
+        }
+        else
+        {
             pid_t tpid = wait(&child_status);
             do
             {
@@ -151,74 +230,109 @@ int runcmd(char meta, char **argv, char *file, int is_bg, int pipe_side, int fd[
                 if (tpid != child_pid)
                     printf("done");
             } while (tpid != child_pid);
+        }
 
-            return child_status;
-        }
-        else
-        {
-            struct sigaction sa;
-            printf("HERE\n");
-            sa.sa_handler = child_handler;
-            if (sigaction(SIGCHLD, &sa, NULL))
-            {
-                perror("sigaction");
-                return 1;
-            }
-            return child_status;
-        }
+        return child_status;
+        // }
+        // else
+        // {
+        //     struct sigaction sa;
+        //     printf("HERE\n");
+        //     sa.sa_handler = child_handler;
+        //     if (sigaction(SIGCHLD, &sa, NULL))
+        //     {
+        //         perror("sigaction");
+        //         return 1;
+        //     }
+        //     return child_status;
+        // }
     }
-    printf("candem: %d\n", camden);
     return 0;
 }
 
-void run_all_cmds(Metas *meta_struct, int pipe_side, int fd[])
+// void run_all_cmds(Metas *meta_struct, int pipe_side)
+// {
+//     if (meta_struct[get_meta_size(meta_struct) - 2].meta == '&')
+//     {
+//         int ii = 0;
+//         int foundInOut = 0;
+//         while (meta_struct[ii].meta != 'n')
+//         {
+//             if (meta_struct[ii].meta == '<')
+//             {
+//                 // printf("%s %s", meta_struct[ii].cmds[0], meta_struct[ii + 1].cmds[0]);
+//                 runcmd('<', meta_struct[ii].cmds, meta_struct[ii + 1].cmds[0], 1, pipe_side);
+//                 foundInOut = 1;
+//             }
+//             else if (meta_struct[ii].meta == '>')
+//             {
+//                 runcmd('>', meta_struct[ii].cmds, meta_struct[ii + 1].cmds[0], 1, pipe_side);
+//                 foundInOut = 1;
+//             }
+//             ii++;
+//         }
+//         if (foundInOut == 0)
+//         {
+//             runcmd('n', meta_struct[0].cmds, NULL, 1, pipe_side);
+//         }
+//     }
+//     else
+//     {
+//         int ii = 0;
+//         int foundInOut = 0;
+//         while (meta_struct[ii].meta != 'n')
+//         {
+//             if (meta_struct[ii].meta == '<')
+//             {
+//                 // printf("%s %s", meta_struct[ii].cmds[0], meta_struct[ii + 1].cmds[0]);
+//                 runcmd('<', meta_struct[ii].cmds, meta_struct[ii + 1].cmds[0], 0, pipe_side);
+//                 foundInOut = 1;
+//             }
+//             else if (meta_struct[ii].meta == '>')
+//             {
+//                 runcmd('>', meta_struct[ii].cmds, meta_struct[ii + 1].cmds[0], 0, pipe_side);
+//                 foundInOut = 1;
+//             }
+//             ii++;
+//         }
+//         if (foundInOut == 0)
+//         {
+//             runcmd('n', meta_struct[0].cmds, NULL, 0, pipe_side);
+//         }
+//     }
+// }
+
+void runpipe(char ***cmd)
 {
-    if (meta_struct[get_meta_size(meta_struct) - 2].meta == '&')
+    int fd[2];
+    pid_t pid;
+    int fdd = 0; /* Backup */
+
+    while (*cmd != NULL)
     {
-        int ii = 0;
-        int foundInOut = 0;
-        while (meta_struct[ii].meta != 'n')
+        pipe(fd); /* Sharing bidiflow */
+        if ((pid = fork()) == -1)
         {
-            if (meta_struct[ii].meta == '<')
-            {
-                // printf("%s %s", meta_struct[ii].cmds[0], meta_struct[ii + 1].cmds[0]);
-                runcmd('<', meta_struct[ii].cmds, meta_struct[ii + 1].cmds[0], 1, pipe_side, fd);
-                foundInOut = 1;
-            }
-            else if (meta_struct[ii].meta == '>')
-            {
-                runcmd('>', meta_struct[ii].cmds, meta_struct[ii + 1].cmds[0], 1, pipe_side, fd);
-                foundInOut = 1;
-            }
-            ii++;
+            perror("fork");
+            exit(1);
         }
-        if (foundInOut == 0)
+        else if (pid == 0)
         {
-            runcmd('n', meta_struct[0].cmds, NULL, 1, pipe_side, fd);
-        }
-    }
-    else
-    {
-        int ii = 0;
-        int foundInOut = 0;
-        while (meta_struct[ii].meta != 'n')
-        {
-            if (meta_struct[ii].meta == '<')
+            dup2(fdd, 0);
+            if (*(cmd + 1) != NULL)
             {
-                // printf("%s %s", meta_struct[ii].cmds[0], meta_struct[ii + 1].cmds[0]);
-                runcmd('<', meta_struct[ii].cmds, meta_struct[ii + 1].cmds[0], 0, pipe_side, fd);
-                foundInOut = 1;
+                dup2(fd[1], 1);
             }
-            else if (meta_struct[ii].meta == '>')
-            {
-                runcmd('>', meta_struct[ii].cmds, meta_struct[ii + 1].cmds[0], 0, pipe_side, fd);
-                foundInOut = 1;
-            }
-            ii++;
+            close(fd[0]);
+            execvp((*cmd)[0], *cmd);
+            exit(1);
         }
-        if (foundInOut == 0)
+        else
         {
-            runcmd('n', meta_struct[0].cmds, NULL, 0, pipe_side, fd);
+            wait(NULL); /* Collect childs */
+            close(fd[1]);
+            fdd = fd[0];
+            cmd++;
         }
     }
 }
@@ -410,39 +524,62 @@ void shell_loop()
         fflush(stdout);
         fgets(command, MAX_INPUT_SZ, stdin);
         command[strlen(command) - 1] = '\0'; //get rid of \n and replace with nu
+
         int i = 0;
-        char pipe1[100];
-        char pipe2[100];
-        while (command[i] != '\0')
+        char *p = strtok(command, "|");
+        char *array[50];
+        char **cmds[10];
+
+        while (p != NULL)
         {
-            if (command[i] == '|')
-            {
-                int ii = 0;
-                int jj = 0;
-                while (ii < i)
-                {
-                    pipe1[ii] = command[ii];
-                    ii++;
-                }
-                while (jj < strlen(command))
-                {
-                    pipe2[jj] = command[jj + i + 1];
-                    jj++;
-                }
-            }
-            i++;
+            array[i++] = p;
+            p = strtok(NULL, "|");
         }
-        char *cleaned1 = clean_input(pipe1);
-        char *cleaned2 = clean_input(pipe2);
-        char **tokens1 = split_tokens(cleaned1);
-        char **tokens2 = split_tokens(cleaned2);
-        Metas *meta_struct1 = get_token_struct(tokens1);
-        Metas *meta_struct2 = get_token_struct(tokens2);
+
+        int jj = 0;
+        while (array[jj] != NULL)
+        {
+            jj++;
+        }
+        if (jj > 1)
+        {
+            char *total_cmd = clean_input(command);
+            char **total_tokens = split_tokens(total_cmd);
+            Metas *total_meta_struct = get_token_struct(total_tokens);
+            runcmd(total_meta_struct);
+        }
+        else
+        {
+            for (i = 0; i < jj; ++i)
+            {
+                char *cleaned1 = clean_input(array[i]);
+                char **tokens1 = split_tokens(cleaned1);
+                Metas *meta_struct1 = get_token_struct(tokens1);
+                cmds[i] = meta_struct1[0].cmds;
+            }
+
+            runpipe(cmds);
+        }
+
+        //         char *total_cmd = clean_input(command);
+        // char **total_tokens = split_tokens(total_cmd);
+        // Metas *total_meta_struct = get_token_struct(total_tokens);
+
+        // char *cleaned1 = clean_input(pipe1);
+        // char *cleaned2 = clean_input(pipe2);
+        // char **tokens1 = split_tokens(cleaned1);
+        // char **tokens2 = split_tokens(cleaned2);
+        // Metas *meta_struct1 = get_token_struct(tokens1);
+        // Metas *meta_struct2 = get_token_struct(tokens2);
+        // char **cmd[] = {meta_struct1[0].cmds, meta_struct2[0].cmds, NULL};
+        // printf("Cmds (%s)\n", meta_struct1[0].cmds[0]);
+        // printf("Cmds (%s)\n", meta_struct1[0].cmds[1]);
+        // printf("Cmds (%s)\n", meta_struct1[1].cmds[0]);
+        // printf("Cmds (%s)\n", meta_struct1[1].cmds[1]);
         // setup pipe
-        int fd[2];
-        pipe(&fd[0]);
-        run_all_cmds(meta_struct1, 0, fd);
-        run_all_cmds(meta_struct2, 1, fd);
+        // run_all_cmds(meta_struct1, 0);
+        // run_all_cmds(meta_struct2, 1);
+        // runcmd(total_meta_struct);
         //
         //Backgound process
         // run_all_cmds(meta_struct);
@@ -496,5 +633,14 @@ int main(int argc, char *argv[])
 {
     shell_loop();
 
-    return 0;
+    // char *ls[] = {"ls", NULL};
+    // char *rev[] = {"wc", NULL};
+    // char *nl[] = {"nl", NULL};
+    // char *cat[] = {"cat", "-e", NULL};
+    // char **cmd[] = {ls, rev, NULL};
+
+    // pipeline(cmd);
+    // return (0);
+
+    // return 0;
 }
