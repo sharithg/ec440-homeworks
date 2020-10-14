@@ -34,7 +34,7 @@ typedef struct
 typedef struct thread_t
 {
     tcb block;
-    void *stack_ptr;
+    int *stack_ptr;
     struct thread_t *next;
 } thread_t;
 

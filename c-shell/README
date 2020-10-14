@@ -1,0 +1,53 @@
+The shell implemeted follows the REPL paradigm and starts wil the shell_loop function which 
+has a infinite while loop printing out "my_shell" or blank depending on if the "-n" flag is set.
+
+********** shell_loop ************************************
+1. First thing that happends is the command is pre defined as a char[] with max input of 512 characters
+and memset copies all null characters to the "command" variable which stores the actual command.
+Here there is a check on every iteration to check after user input, if the shell is still null 
+because the only way it could be null is if the user hit Ctrl-D. If null is found the program exits.
+
+2. Check for pipes start with tokenizing everything to the left and right of pipes and storing them 
+in the array variable. I count the size of this array and if its size is greater than one 
+(which means at least one pipe exists) i use my utility functions to prepare the commands
+(which are currently strings in a array) to be sent to the runpipes function. The utility functions 
+will be explained further but the end result is a 2d array with each index being a arg list of commands 
+sandwitched between pipes. If the array is less than one there are no pipes and the command is sent to 
+the runcmd function which executs a single string of commands. 
+
+----Note: the runcmd and runpipes function could have been added together but due to 
+time contraints these had to be seperated---
+
+********** clean_input ******************************
+This is a simple utility function which adds spaces inbetween any meta characters found. This is 
+done so that the next function (which uses strtoken) can properly tokenize the command line given
+the delimiter of space. 
+
+********** split_tokens ******************************
+This function simply tokenizes the string passed into it by the delimiter of space and returns a
+string array (char pointer array) where each item is a command, meta character, or file name.
+
+********** get_token_struct **************************
+I have defined a simple struct called Metas which hold an arg list, and any meta character associated with it.
+And get_token_struct creates a array of these structs by having a pointer to a individual token
+and backtracking up to the previous token pointer and storing everything before the meta character 
+in the arg list. If no meta characters are found proceeding the command, the meta character accociated
+is put as 'n'.
+
+*********** runcmd ******************************
+The runcmd function takes in an array of these structs and handles the meta character logic. 
+For every meta character found the process is forked and the parent process waits for the forked process
+to finish executing. In the child, it checks the meta variable which holds which meta character is currenly being 
+processed (where 'n' means no meta char and it directly execvp's it). If output redirection is found, it
+creates a new file with the file name input (which is extracted from the struct array) and its file descriptor
+is dup'ed with the file descriptor for stdout. The same process happens to input redirection but the fd gets duped 
+with stdin. 
+
+There is also a check to see if the last character is an '&' which then instead of waiting for the child
+to finish, it goes to a signal handler which prevents ZOMBIE processes and the parent process can continue executing.
+
+************* runpipe **************************
+This runs multipe pipes by reciving a 2d array of arg lists. It loops through the 2d array and sets up the pipe for for the current command.
+The pipe functions creates two ends of the pipe and dup2 connects the stdin with the read end of the pipe and
+stdout with the write and execvp executes the command and the data flows to the input of the next command. If we are
+on the last command, we dont dup the stdout becuase we want the data to output on stdout.

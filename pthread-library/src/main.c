@@ -1,4 +1,5 @@
 #include <stdio.h>
+// #include "threads.h"
 #include <pthread.h>
 #include <stdlib.h>
 
@@ -13,8 +14,8 @@ void *count(void *arg)
     {
         if ((i % 1000000) == 0)
         {
-            printf("tid: 0x%x Just counted to %d of %ld\n",
-                   (unsigned int)pthread_self(), i, c);
+            // printf("tid: 0x%x Just counted to %d of %ld\n",
+            //        (unsigned int)pthread_self(), i, c);
         }
     }
     return arg;
