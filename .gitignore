@@ -1,2 +1,4 @@
 .fseventsd/
 test/
+.DS_Store
+*.pdf
